@@ -1,0 +1,17 @@
+[project]
+name = "prescience"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Oliver Normand", email = "oliver@normand.uk" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+prescience = "prescience:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
