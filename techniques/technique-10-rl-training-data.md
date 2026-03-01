@@ -31,7 +31,7 @@ Generate plausible hypothetical questions about events that didn't happen. "What
 
 **Risk:** The quality of the training signal depends on the quality of the counterfactual generation. Implausible or poorly-defined counterfactuals will generate noise, not signal.
 
-**Hypothetical Event Bayesian Networks:** An extension proposed by Lee et al. (July 2025; arXiv:2507.19477) - construct Bayesian networks of related events to model hidden inter-event correlations, providing richer reward signal. This directly addresses the **noisiness-sparsity problem**: event outcomes are inherently stochastic (a 60% probability event still fails 40% of the time), making individual reward signals extremely noisy compared to math or code where answers are deterministic. By modelling correlations between events, you can extract denser reward signal from the same data.
+**Using event correlations for richer signal (Hypothetical Event Bayesian Networks):** An extension from Lee et al. (July 2025; arXiv:2507.19477). The fundamental problem with forecasting RL is that outcomes are noisy - a well-calibrated 60% forecast will be "wrong" 40% of the time, so any single resolved question gives a noisy reward signal. But events are correlated: if the model correctly forecasts rising interest rates, falling housing starts, and slowing GDP growth as a package, that's much stronger evidence of good reasoning than getting any one of them right (which could be luck). By modelling inter-event correlations as Bayesian networks, you can extract denser reward signal from the same resolved outcomes.
 
 ---
 
@@ -78,7 +78,7 @@ A self-supervised loop: generate forecasts with reasoning chains, filter for the
 
 **Evidence:** Zelikman et al. (NeurIPS 2022) showed iterative improvement on reasoning benchmarks without human annotation. Quiet-STaR (2024) extended this with internal reasoning tokens.
 
-**Uncertainty Distillation as a pre-RL step:** Hager et al. (Johns Hopkins, March 2025; arXiv:2503.14749) demonstrated a related approach: sample 100 responses, consolidate semantically equivalent answers, estimate probabilities via Monte Carlo, learn a calibration function, then fine-tune the model to output verbalized confidences. This yields well-calibrated verbalized confidences that outperform baselines 20x slower at inference, and works on black-box models via API fine-tuning. This could serve as a useful bootstrap before the full STaR loop - giving the model a starting point for calibrated probability output before iterating on reasoning quality.
+**Bootstrapping with Uncertainty Distillation:** Before running the full STaR loop, you need the model to output reasonably calibrated probabilities in the first place - otherwise there are no "good chains" to learn from in iteration 1. Hager et al. (Johns Hopkins, March 2025; arXiv:2503.14749) provide a bootstrap: run the model 100 times on each question, see how often it gives each answer, use that empirical frequency as the "true" probability, and fine-tune the model to just say that number directly. This gives you a calibrated starting point - the model now outputs well-calibrated probabilities - and then the STaR loop can improve the *reasoning* that leads to those probabilities. Outperforms baselines 20x slower at inference, works on black-box models via API fine-tuning.
 
 ---
 

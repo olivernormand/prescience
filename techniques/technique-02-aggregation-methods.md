@@ -21,11 +21,11 @@ This is the baseline everything else must beat. It's robust, requires no tuning,
 
 ### 2b. Logarithmic Pooling (Geometric Mean of Odds)
 
-Instead of averaging probabilities directly, convert to log-odds, average, convert back. This handles extreme probabilities better - if three agents say 90%, 85%, 92%, log pooling gives a more confident result than arithmetic mean.
+Instead of averaging probabilities directly, convert to log-odds, average, convert back. The practical difference shows up when agents are confidently agreeing: if three agents say 90%, 85%, 92%, arithmetic mean gives ~89% but log pooling gives ~91%. Log pooling respects the idea that when multiple independent assessments all point toward an extreme probability, the combined estimate should be more extreme, not just the average.
 
-**Evidence:** Satopää et al. (2014) found log pooling with extremisation outperformed arithmetic mean in geopolitical forecasting, with optimal extremising factor d in [1.161, 3.921]. The Good Judgment Project used an "elitist extremising algorithm" - weighted by track record and update frequency, then extremised. Neyman & Roughgarden (Operations Research, 2023) proved a formal correspondence between scoring rules and aggregation methods - log scoring implies log pooling, quadratic (Brier) implies linear pooling. Since we score on Brier, the theoretical case for log pooling is actually weaker than it might seem.
+**Evidence from forecasting:** Satopää et al. (2014) found log pooling with extremisation outperformed arithmetic mean in the Good Judgment Project's geopolitical forecasting, with optimal extremising factor d in [1.161, 3.921]. The GJP used an "elitist extremising algorithm" - weighting forecasters by track record and update frequency, then extremising. Neyman & Roughgarden (Operations Research, 2023) proved a formal correspondence: log scoring implies log pooling, Brier scoring implies linear pooling. Since we score on Brier, the theoretical case for log pooling is actually weaker than it might seem.
 
-**Extremisation detail:** Recent analysis suggests principled extremisation should push away from the estimated base rate, not from 50%. Using "pseudo-historical" odds as the baseline works better than assuming 1:1 odds. For LLM ensembles specifically, shared training data means arithmetic averaging will be systematically underconfident, making some form of extremisation necessary - but the extremising factor must be empirically tuned on held-out resolved questions.
+**Why extremisation matters for us specifically:** Our agents share the same underlying model and training data, so they hedge in correlated ways. If five agents independently research a question and all come back saying 70%, that's a stronger signal than one agent saying 70% - but arithmetic mean just returns 70% regardless. Extremisation corrects for this shared hedging bias. Recent analysis suggests the push should be away from the base rate, not from 50% - if the base rate for this class of events is 40% and our agents say 70%, that 30-point deviation from the base rate should be amplified. The extremising factor must be tuned on held-out resolved forecasts.
 
 **The concern:** Are we overfitting on statistics rather than making the models better forecasters? The aggregation formula is a finishing touch, not the main event. If log pooling beats simple mean on the backtest, great - use it. If it doesn't, the added complexity isn't worth it. Not something to refine heavily at this stage - the primary effort should go into making the agents better researchers and reasoners.
 
@@ -63,11 +63,11 @@ This is the most expensive aggregation method but potentially the most powerful 
 
 ### 2e. Delphi (Iterative Deliberation)
 
-Multiple rounds of anonymous peer feedback. After the initial forecasts, each agent sees the others' estimates and reasoning (anonymised), revises their own, and repeats for 3-4 rounds until convergence.
+Mimics how the best human forecasting teams actually work: after making initial forecasts, each agent sees the others' estimates and reasoning (anonymised), revises their own, and repeats for 3-4 rounds until convergence. The idea is that agents can identify holes in each other's reasoning - "you didn't consider that the election commission has already set a date" - and update accordingly.
 
-**Evidence:** Bertolotti & Mari (2025; arXiv:2502.21092) formalised the LLM-based Delphi method. Mueller et al. (2024) found moderate correlation (r = 0.64) between AI and human expert Delphi panels.
+**Evidence:** Bertolotti & Mari (2025; arXiv:2502.21092) formalised the LLM-based Delphi method. Mueller et al. (2024) found moderate correlation (r = 0.64) between AI and human expert Delphi panels on forecasting tasks.
 
-**Caveat:** A NeurIPS 2025 paper (disentangling debate from voting) found that majority voting alone accounts for most gains typically attributed to multi-agent debate. The iterative deliberation structure needs to genuinely add value beyond simple averaging. Worth testing, but be skeptical.
+**Caveat:** A NeurIPS 2025 paper (disentangling debate from voting) found that majority voting alone accounts for most gains typically attributed to multi-agent debate. The deliberation might not add much beyond what simple averaging already captures. The test: do the forecasts meaningfully change during deliberation rounds, or do they just converge to the mean? If the latter, we're paying for multiple rounds to get the same result as averaging.
 
 ---
 

@@ -13,7 +13,7 @@ Given a reward function (Technique 9) and training data (Technique 10), which RL
 
 ReMax with baseline-subtracted advantages outperformed all GRPO variants for forecasting in direct comparisons. A 7-run ensemble of ReMax-trained models achieved Brier score 0.190, beating OpenAI o1.
 
-**Why ReMax over GRPO:** GRPO (Group Relative Policy Optimisation) computes advantages relative to other samples in the same batch. For forecasting, where reward variance is high and outcomes are noisy, this leads to unstable training. ReMax uses a learned baseline to subtract, providing more stable gradient estimates.
+**Why ReMax over GRPO for forecasting specifically:** GRPO computes advantages relative to other samples in the same batch - "was this forecast better than the others in this batch?" But forecasting rewards are inherently noisy (a correct 60% forecast gets punished 40% of the time), so the batch-relative comparison is unstable. ReMax uses a learned baseline instead - "was this forecast better than what we'd normally expect?" - providing more stable gradient estimates when individual rewards are noisy.
 
 **Practical engineering that matters:**
 - **Soft Brier fallback:** When the model outputs a malformed forecast (not a valid probability), assign a constant 0.25 Brier score instead of crashing or giving 0 reward. This prevents training collapse over long runs
@@ -38,7 +38,7 @@ Not all training questions are equally useful. Questions where the model has rou
 
 ### 11c. GRIP (Group-based Relative Importance for Policy Optimization)
 
-From Time-R1 (arXiv:2506.10630, 2025), GRIP introduces non-uniform sampling (selecting high-reward trajectories from a larger candidate pool) and adaptive weighting (amplifying gradient signals from informative samples). While developed for time-series forecasting, both innovations apply to event forecasting RL - particularly the idea of mining training batches for the most informative samples rather than weighting all samples equally.
+From Time-R1 (arXiv:2506.10630, 2025). The core idea applied to forecasting: not all training rollouts are equally informative. A forecast where the model agonised between 55% and 65% and landed on 60% teaches less than one where it initially estimated 30%, found contradicting evidence, and revised to 70%. GRIP selects the most informative trajectories from a larger candidate pool and amplifies their gradient signal, so the model learns disproportionately from the rollouts where its reasoning made the biggest difference.
 
 ---
 
@@ -48,7 +48,7 @@ Lee et al.'s position paper (July 2025; arXiv:2507.19477) deserves attention bec
 
 1. **The noisiness-sparsity problem:** Event outcomes are inherently stochastic - a 60% probability event still fails 40% of the time - making reward signals extremely noisy compared to math or code where answers are deterministic.
 
-2. **The simple reward structure problem:** Unlike math (multi-step verifiable reasoning), forecasting has a single scalar reward, providing minimal signal about reasoning quality. Solutions include: LLM-as-judge for reasoning evaluation, decomposing questions into verifiable sub-questions (e.g., "What is SpaceX's recent track record?" is verifiable independently), and using prediction market prices as continuous intermediate reward signals.
+2. **The simple reward structure problem:** Unlike math (multi-step verifiable reasoning where each step can be checked), forecasting gives you one number at the end - "your Brier score was 0.18." That tells you almost nothing about *which parts* of the reasoning were good or bad. Did the agent find the right evidence but weigh it wrong? Or miss key evidence entirely? Solutions include: LLM-as-judge for reasoning evaluation (Technique 9 research gap), decomposing questions into verifiable sub-questions (e.g., "What is SpaceX's recent track record?" can be checked independently of the final forecast), and using prediction market prices as continuous intermediate reward signals (Technique 9c, with caveats).
 
 3. **The knowledge contamination problem:** Pre-cutoff events may be in the model's training data, meaning "forecasting" is actually recall. Techniques 10b and 10c address this directly.
 

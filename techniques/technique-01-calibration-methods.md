@@ -41,23 +41,23 @@ The same idea as Platt scaling, but fit separate parameters for different questi
 
 ### 1c. EMOS (Ensemble Model Output Statistics)
 
-Borrowed from weather forecasting (Gneiting et al., 2005). Instead of calibrating the final aggregated probability, EMOS calibrates the ensemble directly - fitting a parametric distribution whose parameters are linear functions of ensemble member forecasts. The mean is a bias-corrected weighted average of agent outputs; the variance is a linear function of ensemble spread. Parameters are estimated by minimising CRPS (Continuous Ranked Probability Score).
+Borrowed from weather forecasting (Gneiting et al., 2005), where the same problem exists: you have an ensemble of models, each producing a forecast, and you need to learn how to combine and correct them. EMOS learns a formula that does two things at once: it learns which agents to trust more (a weighted average of their outputs), and it learns the relationship between how much the agents disagree and how wrong the final forecast tends to be.
 
-The key insight from meteorology is the **spread-skill relationship**: ensemble spread predicts forecast uncertainty. If agents disagree widely, the forecast is less reliable. EMOS formalises this - it learns to widen the uncertainty when agents disagree and narrow it when they agree. Bayesian Model Averaging (BMA) takes a similar approach, modelling the predictive distribution as a weighted mixture of PDFs centred on each ensemble member - BMA produced 90% prediction intervals 66% shorter than climatology baselines.
+**The forecasting-specific insight:** When our 5-10 agents produce estimates of 60%, 65%, 70%, 72%, 75% - that tight clustering means something different than if they produce 30%, 50%, 65%, 80%, 90%. EMOS learns from historical forecasts what each spread pattern means for actual accuracy. Weather forecasters call this the "spread-skill relationship" - wide spread predicts larger errors. BMA (Bayesian Model Averaging) is a related approach that produced 90% prediction intervals 66% shorter than baselines in weather.
 
-**Honest assessment:** This makes most sense when the ensemble members are meaningfully different (different models, different techniques). When our agents are M runs of the same model, the individual-level weighting probably doesn't buy much. The main value would be learning the relationship between agent disagreement and forecast error - but as discussed in Technique 1a, uncertainty about our estimate should ideally be baked into the probability itself, not expressed as a separate layer.
+**Honest assessment:** This makes most sense when the ensemble members are meaningfully different - different search strategies, different reasoning frameworks, different models. When our agents are M runs of the same model with the same prompts, the spread is mostly random noise and there's less stable signal to learn from. The main value comes once we have genuinely diverse agent configurations (Technique 2c).
 
-**When to use:** Once we have diverse agent configurations (different reasoning frameworks, different models). Probably not useful in the early days when all agents are similar.
+**When to use:** Once we have diverse agent configurations and enough resolved forecasts to learn the spread-error relationship reliably. Probably not useful in the early days when all agents are similar.
 
 ---
 
 ### 1d. Venn-ABERS Calibration
 
-Provides stronger theoretical guarantees than Platt scaling, especially with small calibration datasets. Where Platt assumes the calibration curve is logistic (which may not be true), Venn-ABERS (van der Laan et al., 2025; arXiv:2502.05676) extends Vovk's framework to provide **finite-sample calibration guarantees** - unlike isotonic regression, which requires asymptotic convergence. It applies isotonic regression twice (once assuming each class), producing a calibrated interval [p0, p1]. This outputs not just a calibrated point estimate but a calibrated *interval*, communicating uncertainty in the calibration itself.
+The practical problem: early in Prescience's life, we'll have very few resolved forecasts to calibrate against - maybe 30 or 50. Platt scaling can overfit badly on small datasets (fitting a logistic curve through 30 points is unreliable). Venn-ABERS (van der Laan et al., 2025; arXiv:2502.05676) is more robust in this regime - it provides finite-sample calibration guarantees rather than assuming a specific curve shape. It also outputs a calibrated *interval* [p0, p1] rather than a point, which tells you how uncertain the calibration itself is - useful when you're still learning the system's biases.
 
-**The inverse softmax trick** (Wang et al., 2024; arXiv:2410.06707) is a related technique worth noting: it inverts LLM-generated verbalized probabilities back to estimated logits, then applies temperature scaling. This enables post-hoc calibration of black-box LLMs that only output text. Essentially the same category as Platt scaling but approaches the problem from the other direction.
+**The inverse softmax trick** (Wang et al., 2024; arXiv:2410.06707) solves a different practical problem: if we're using a black-box model that only gives us text probabilities (no logits), how do we calibrate it? The trick inverts the verbalized probability back to an estimated logit, then applies temperature scaling. Relevant if we're calibrating outputs from closed-source models.
 
-**When to use:** Early in the system's life when we have <100 resolved forecasts. Platt scaling can overfit with small datasets; Venn-ABERS is more robust. As we accumulate more data, the advantage shrinks and Platt's simplicity wins.
+**When to use:** Early in the system's life when we have <100 resolved forecasts. As we accumulate more data, Platt becomes reliable and its simplicity wins.
 
 ---
 

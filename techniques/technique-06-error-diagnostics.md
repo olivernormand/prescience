@@ -40,13 +40,9 @@ A related decomposition from meteorology (Murphy, 1973):
 - **Resolution:** How much do the forecasts vary? A system that always predicts 50% has zero resolution. A system that confidently says 90% or 10% when appropriate has high resolution. Poor resolution → the system isn't discriminating between likely and unlikely events, needs better information
 - **Uncertainty:** How inherently unpredictable are the questions? This is a property of the question set, not the system. It sets the floor on achievable Brier score
 
-**When to use which:** BIN (6a) is better for diagnosing what to fix. Brier decomposition (6b) is better for understanding whether the problem is calibration or discrimination, and for benchmarking against the theoretical floor (uncertainty). Stephenson et al. (2008) identified additional within-bin components that make this decomposition more robust for smaller samples.
+**When to use which:** BIN (6a) is better for diagnosing what to fix next. Brier decomposition (6b) is better for understanding whether the problem is calibration or discrimination, and for benchmarking against the theoretical floor (uncertainty) - i.e. how much of our error is because the questions are inherently unpredictable vs because we're forecasting badly. Stephenson et al. (2008) identified additional within-bin components that make this decomposition more robust for smaller samples.
 
-**Complementary diagnostics:** Two recent tools can serve as real-time quality checks without waiting for resolution:
-
-- **Martingale Score** (arXiv:2512.02914, 2025): Detects when LLMs fail to properly update beliefs by measuring violations of the Martingale property - that Bayesian belief updates should not be predictable from priors alone. The study found belief entrenchment is widespread across models, and reasoning-optimised models (RL-trained) can show *worse* belief updating despite better final answers. Critically, the Martingale Score predicts ground-truth accuracy without labelled data.
-
-- **Bayesian Coherence Coefficient (BCC)** (arXiv:2507.17951, 2025): Measures how consistently LLMs update beliefs per Bayes' theorem. Found a strong positive correlation (r = 0.906) between model size and Bayesian coherence, with all models showing systematic under-updating. Both can serve as real-time diagnostics or as features for the meta-prediction classifier (Technique 5c).
+**Real-time quality checks (no resolved outcomes needed):** The Martingale Score and Bayesian Coherence Coefficient (discussed in Technique 5c) can also feed into diagnostic analysis - if the system consistently fails to update on evidence in a specific domain, that shows up as an information problem in BIN decomposition when outcomes eventually resolve. Tracking both the real-time signals and the post-resolution decomposition lets you validate whether your pre-resolution quality flags actually predict post-resolution errors.
 
 ---
 

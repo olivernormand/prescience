@@ -5,25 +5,25 @@
 
 ## Overview
 
-If we pursue RL fine-tuning, the choice of reward function matters enormously. Standard RL for language models rewards binary correctness ("did you get the right answer?"), but forecasting needs something more nuanced - we care about *how confident* the model was, not just whether it was right. These are three reward functions specifically designed for training calibrated forecasters.
+If we pursue RL fine-tuning, the choice of reward function matters enormously. Standard RL for language models rewards binary correctness ("did you get the right answer?"), but forecasting needs something more nuanced - we care about *how confident* the model was, not just whether it was right. The core choice is between proper scoring rules (Brier vs log score), with market prices as an alternative signal source.
 
 **Context from §4.1:** The default bet is to use frontier models with good scaffolding. RL makes sense only under specific conditions (retrieval in the loop, ability to train on top of frontier models without delay). The techniques below are relevant if and when we decide to pursue RL.
 
 ---
 
-### 9a. RLCR (Calibration Rewards) - Most Promising
+### 9a. Brier Score as Reward (Default) / RLCR
 
-Standard RL for language models (RLVR) rewards correct answers. But this actually *degrades* calibration - the model learns to be confident about everything, including things it's wrong about. RLCR fixes this by adding a calibration penalty:
+The most natural reward function for forecasting: use the Brier score directly.
 
-**Reward = Correctness - (Confidence - Correctness)²**
+**Reward = 1 - (p - outcome)²**
 
-The model generates a reasoning chain, a forecast, and a confidence estimate. The reward combines getting the answer right with getting the confidence right. Models trained this way learn to explicitly reason about their own uncertainty in the chain-of-thought - "I'm not sure about this because..." becomes a trained behaviour, not just a prompting artefact.
+The model outputs a probability, the event resolves, and the reward is how close the probability was to the outcome. This is a proper scoring rule - the model maximises expected reward by stating its true belief.
 
-**Results (MIT, July 2025):** Calibration error reduced by up to 90% compared to standard RLVR, with no accuracy loss. Actually improved accuracy on out-of-distribution tasks, because well-calibrated uncertainty enables better reasoning under ambiguity.
+**RLCR (Damani et al., MIT, July 2025; arXiv:2507.16806)** was originally presented as a distinct approach: **R = Correctness - (Confidence - Correctness)²**. It was designed for QA tasks where the model produces a separate *answer* and a separate *confidence in that answer*. The reward explicitly separates "did you get it right" from "did you know how confident to be", and the authors showed this trains explicit uncertainty reasoning in the chain-of-thought ("I'm not sure about this because..."). Results: calibration error reduced by up to 90% vs standard RLVR, no accuracy loss, improved OOD performance.
 
-**But wait - isn't this just Brier score?** Almost. If the reward is just the Brier score, the model is already being trained to minimise Brier. The RLCR distinction is that it explicitly separates correctness from calibration in the reward, which changes the learning dynamics. With pure Brier, the model can improve its score by being slightly more correct *or* slightly better calibrated - it doesn't know which lever it's pulling. RLCR makes the calibration lever explicit, which causes the model to learn to reason about its own uncertainty in the chain-of-thought. Whether this distinction matters in practice depends on the model and the training setup.
+**But for forecasting, RLCR collapses to Brier.** In forecasting, the probability *is* the output - there's no separate "answer" and "confidence." The model outputs 72% and the event either happens or doesn't. The RLCR formula applied to this case is just the Brier score. The interesting finding from the RLCR paper - that models learn to reason about uncertainty in their chain-of-thought - should emerge naturally from any proper scoring rule reward, because the model needs to calibrate well to maximise reward.
 
-**Why it's the most promising for Prescience:** It trains explicit uncertainty reasoning - "I'm not sure about this because..." becomes a learned behaviour, not just a prompting artefact.
+**The real question is Brier vs log score (9b)**, not Brier vs RLCR.
 
 ---
 
@@ -37,7 +37,7 @@ This is a "proper scoring rule" - mathematically, the model maximises expected r
 
 **Results (March 2025):** Broke overconfidence patterns - models learned to use the full 0-100% range instead of clustering at the extremes. Generalised to unseen tasks without retraining.
 
-**Comparison with 9a:** RLCR adds calibration as a penalty to correctness. Log scoring directly optimises a proper scoring rule. Log scoring is also theoretically compatible with logarithmic pooling (Technique 2b) - if you train agents on log score and aggregate via log pooling, the whole system optimises a consistent objective.
+**Comparison with Brier (9a):** Both are proper scoring rules. The key difference is the shape of the penalty: Brier penalises quadratically (being wrong by 0.3 is 9x worse than being wrong by 0.1), while log score penalises logarithmically (being wrong by assigning 0% to an event that occurs is *infinitely* bad). This means log score more aggressively punishes extreme overconfidence. Log scoring is also theoretically compatible with logarithmic pooling (Technique 2b) - if you train agents on log score and aggregate via log pooling, the whole system optimises a consistent objective.
 
 ---
 
@@ -57,21 +57,23 @@ Additionally: market prices are not ground truth, thin markets may have unreliab
 
 ### 9d. Behavioral Calibration RL (Claim-Level Confidence)
 
-Two innovations from arXiv:2512.19920 (2025): using the PPO critic network's value function as an implicit confidence estimator (since the critic minimises Brier score between predicted value and policy return, it naturally converges to probability of success), and extending to **claim-level confidence** - different confidence scores for different sub-components of reasoning. It also uses Beta distribution priors for improved stability during GRPO training.
+From arXiv:2512.19920 (2025). The interesting idea for forecasting: instead of a single confidence score for the whole forecast, train the model to express **different confidence levels for different parts of its reasoning**. "I'm fairly sure the base rate for coups in this region is ~5% per year (high confidence), but I'm much less sure whether the current military tensions are different enough from baseline to warrant a large adjustment (low confidence)."
 
-**Why this is interesting for forecasting:** A model could express high confidence in its base rate analysis but low confidence in a specific geopolitical factor assessment. This granularity goes beyond a single probability output and could help identify which parts of the reasoning are most uncertain.
+**Why this matters:** When a forecast turns out wrong, claim-level confidence tells you *which part* of the reasoning failed. Was the base rate wrong, or was the situation-specific adjustment wrong? This maps directly to BIN diagnostics (Technique 6a) - it's essentially building the diagnostic decomposition into the model's output rather than computing it after the fact. Uses Beta distribution priors for training stability and the PPO critic as an implicit confidence estimator.
 
 ---
 
 ### Research gap: RLAIF/Constitutional AI for Forecasting
 
-Lee et al. (2025) identify the largest open research gap: no one has implemented RLAIF (Reinforcement Learning from AI Feedback) specifically for forecasting. The idea: train judge LLMs on expert annotations comparing forecasting reasoning quality, encoding a "forecasting constitution" with principles like: "Does the reasoning consider base rates?", "Does it weigh evidence for and against?", "Are probability estimates consistent with the reasoning?" This could provide richer reward signal than scalar Brier scores without waiting for event resolution.
+Lee et al. (2025) identify the largest open research gap: no one has implemented RLAIF (Reinforcement Learning from AI Feedback) specifically for forecasting. The Brier score tells you *how wrong* a forecast was, but not *why* - a forecast can get a bad Brier score because the reasoning was sloppy, or because the event was genuinely unpredictable. RLAIF would train a judge model that evaluates the *quality of forecasting reasoning* independent of the outcome. A "forecasting constitution" could encode principles like: Did the reasoning start from an appropriate base rate? Did it weigh evidence for and against? Are the probability estimates consistent with the stated reasoning? Did it consider alternative scenarios?
+
+This would provide reward signal that's richer than a scalar Brier score, available immediately (no waiting for resolution), and focused on reasoning quality rather than outcome luck.
 
 ---
 
 ## What to Measure
 
 If pursuing RL:
-- Compare RLCR, log scoring, and Brier-score-based rewards on calibration (ECE) and accuracy (Brier score)
+- Compare Brier vs log scoring rewards on calibration (ECE) and accuracy (Brier score)
 - Check for extreme-prediction collapse (does the model use the full probability range?)
 - Test whether agents trained with these rewards improve the overall system when plugged into the Prescience pipeline

@@ -13,7 +13,7 @@ Not all questions deserve the same amount of compute. Some questions are well-se
 
 ### 7a. Kelly-Weighted Prioritisation
 
-Borrow from portfolio theory: when you can compare your forecast against a market consensus (prediction market prices), you can calculate where your "edge" is highest. Questions where you disagree most with the market and have historically been accurate in that domain are where additional compute is most valuable.
+When prediction market prices are available, you can identify where the system's "edge" is highest - questions where you disagree most with the market and have historically been accurate in that domain. These are the questions where additional compute is most valuable, because they represent genuine forecasting skill rather than agreement with consensus.
 
 **How it works:**
 1. Produce an initial quick forecast for each question

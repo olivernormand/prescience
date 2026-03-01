@@ -39,9 +39,9 @@ Run the pipeline multiple times for the same question with minor variations (dif
 
 **What this tells you:** Stability, not accuracy. A narrow spread means the system reliably produces the same answer - but it could be reliably wrong (all agents agree for the wrong reasons due to shared training data and similar search results). Treat this as a diagnostic, not a confidence measure.
 
-**Conformal prediction extension:** For a more rigorous version, use conformal prediction to produce intervals with statistical coverage guarantees. Compute a nonconformity score (e.g., deviation from the median prediction across runs), calibrate the threshold using a holdout set of resolved questions. The resulting interval has a provable coverage guarantee: if you set 90% coverage, at least 90% of future intervals will contain the well-calibrated probability. The MUSE framework (EMNLP 2025) uses Jensen-Shannon divergence to identify well-calibrated subsets of LLMs from a pool, then aggregates their outputs for tighter intervals. Key variants include Conformal Language Modeling (Quach et al., ICLR 2024, Google Research) and the "API Is Enough" method (Su et al., EMNLP 2024) for black-box LLMs without logit access.
+**Formalising this as confidence intervals:** Conformal prediction can turn this raw spread into intervals with statistical guarantees. If you calibrate the spread against historical forecast accuracy (using resolved backtest questions), you can say "we're 90% confident the true well-calibrated probability is between 55% and 75%." The width of that interval is itself the diagnostic: narrow means the system is confident, wide means it isn't. The MUSE framework (EMNLP 2025) extends this to multi-model settings - it identifies which of your agent configurations are well-calibrated for which question types, and weights them accordingly. Conformal Language Modeling (Quach et al., ICLR 2024) and the "API Is Enough" method (Su et al., EMNLP 2024) provide variants that work with black-box models.
 
-**Triage value:** Unstable questions (wide spread) probably need more research or a different approach. Stable questions (narrow spread) can be output with less review.
+**Triage value for the pipeline:** Unstable questions (wide spread) probably need more research or a different approach - route them to extended processing. Stable questions (narrow spread) can be output with less review. This is a natural fit for the compute allocation decisions in Technique 7.
 
 **Cost:** Expensive - requires multiple full pipeline runs. Best used selectively during development to understand which question types produce fragile forecasts.
 
@@ -65,7 +65,12 @@ This concentrates expensive compute on exactly the questions that need it. The m
 
 **Evidence:** Schoenegger et al. (2023) demonstrated that ML models can predict a priori whether a human geopolitical forecast is likely to be accurate, using features from the written rationale (integrative complexity, hedging language, number of sources cited).
 
-**Complementary diagnostics:** The Martingale Score (arXiv:2512.02914, 2025; detects when models fail to properly update beliefs - predicts ground-truth accuracy without labelled data) and Bayesian Coherence Coefficient (arXiv:2507.17951, 2025; measures Bayesian consistency, r=0.906 correlation with model size) can serve as additional features for the meta-classifier or as standalone quality checks.
+**Detecting when the model isn't actually updating on evidence:** Two recent diagnostics can help identify forecasts where the model ignored what it found during research:
+
+- **Martingale Score** (arXiv:2512.02914, 2025): Checks whether the model's probability actually shifted in response to the evidence it found, or whether it just anchored on its prior and wrote a post-hoc justification. Belief entrenchment is widespread across models - and RL-trained reasoning models can be *worse* at updating than base models. This predicts ground-truth accuracy without needing resolved outcomes.
+- **Bayesian Coherence Coefficient** (arXiv:2507.17951, 2025): Measures whether the model updates its beliefs in a way consistent with Bayes' theorem. All models systematically under-update (r=0.906 correlation between model size and coherence - larger models are closer to Bayesian but still fall short).
+
+Both could serve as features for the meta-classifier, or as standalone red flags: if the model's probability barely moved despite finding strong evidence, something is wrong with that forecast.
 
 ---
 
