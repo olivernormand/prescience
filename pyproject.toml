@@ -7,7 +7,16 @@ authors = [
     { name = "Oliver Normand", email = "oliver@normand.uk" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pydantic-ai[anthropic]",
+    "exa-py",
+    "valyu",
+    "python-dotenv",
+    "httpx",
+    "rich",
+    "logfire>=4.25.0",
+    "pydantic-ai-slim[openai]>=1.63.0",
+]
 
 [project.scripts]
 prescience = "prescience:main"
