@@ -16,7 +16,7 @@ The system needs to construct, for a given question at a given point in time, a 
 
 Before any research begins, the system needs to formalise the input question into a structured format. This is an explicit step, not implicit.
 
-**Question types.** The system should handle three core types:
+**Question types.** The system should handle two core types:
 
 - **Binary.** "Will X happen by date Y?" Outputs a single probability ∈ [0, 1].
 - **Distributional.** "When will X happen?" or "What will Y be worth in 6 months?" Outputs parameters of a probability distribution (e.g. log-normal, mixture) over the outcome space. Binary questions are a special case: they're just a CDF evaluated at a specific point.
@@ -30,38 +30,33 @@ The refinement step takes a natural-language question and produces:
 
 **Implementation.** A single LLM call with structured output. The model should have access to a lightweight search tool at this stage - it may need to look up entities, check whether a question is already being tracked on prediction markets, or clarify ambiguous references. This isn't the deep research phase, but a quick "does this question make sense and what exactly are we forecasting?" check.
 
-### 1.2 Question Decomposition
+```python
+class FormalisedQuestion(BaseModel):
+    original_question: str
+    refined_question: str
+    question_type: Literal["binary", "distributional"]
+    resolution_criteria: str
+    resolution_date: date
+    background: str  # brief context from lightweight search
+```
 
-The formalised question is then decomposed into a research plan. The LLM breaks the question into:
-
-- Sub-questions that can be independently researched
-- Reference classes and base rates to look up
-- Key actors, entities, and causal factors to track
-- Conditional dependencies between sub-questions
-- Specific data sources to check (prediction markets, structured feeds, etc.)
-
-The output is a structured research plan: a list of search queries, data sources to check, and specific factual questions to answer. The prompting should encode superforecasting methodology - outside view first, reference class forecasting, pre-mortem analysis - but the specific research topics should not be overly prescribed. The model should have latitude to identify research angles that aren't covered by a fixed template. There will always be edge cases and novel question types where rigid decomposition fails.
-
-**Open question:** Whether the decomposition step should also have access to search APIs. The argument for: it can ground the decomposition in what information actually exists (avoiding research plans that look good but lead nowhere). The argument against: it adds latency and cost to what should be a quick planning step. We should start with lightweight search access (a single quick web search) and evaluate whether it meaningfully improves the research plans produced.
-
-### 1.3 Search Architecture
+### 1.2 Search Architecture
 
 #### Search API Strategy
 
-We want two tiers of search capability:
+We want two tiers of search capability: backtestable search (APIs with strict date filtering, essential for evaluation) and best-available search (highest quality results for live forecasting, regardless of backtestability).
 
-**Tier 1: Backtestable search.** APIs that support strict date filtering on original publication date, so we can reconstruct what information was available at a given historical point. This is essential for the backtesting pipeline. Candidates include news APIs with proper date filtering (NewsCatcher, NewsAPI.ai, Perigon) and structured data feeds with historical access (FRED, ACLED, Yahoo Finance). We should be cautious about building our own time-indexed news corpus - this is a large infrastructure investment that we're unlikely to do better than dedicated providers. Instead, we should evaluate which existing APIs offer the best combination of coverage, date filtering fidelity, and cost.
+**Starting implementations:**
 
-**Tier 2: Best-available search.** For live, forward-looking forecasting, we should use whichever APIs give the highest quality results, regardless of whether they're backtestable. If a non-backtestable API consistently produces better search results, we should use it in production and accept that we can't backtest that exact configuration. Candidates include:
+- **Valyu** (`pip install valyu`) — Primary search. Unified access to web + proprietary sources (SEC filings, academic papers, financial data). Date filtering via `start_date`/`end_date` parameters (YYYY-MM-DD format). Backtestable. Python SDK with `x-api-key` header auth.
+- **Exa** (`pip install exa-py`) — Secondary search. Own search index, sub-500ms latency, strong semantic search. Research endpoint does multi-step agentic search with structured output. Date filtering via `startPublishedDate`/`endPublishedDate` (ISO 8601). Partially backtestable (dates are estimated publication dates). `AsyncExa` client for async support.
 
-- **Tavily** - Popular, solid quality, good agentic integration. No backtestable version.
-- **Exa** - Own search index, sub-500ms latency, strong semantic search. Research endpoint does multi-step agentic search with structured output. $85M Series B at $700M valuation.
-- **Valyu** - Unified access to web + proprietary sources (SEC filings, academic papers, financial data). Date filtering via `start_date`/`end_date` parameters. Claims highest accuracy on FreshQA (79%) and SimpleQA (94%).
-- **NewsCatcher** - 120,000+ global news sources, NLP enrichment (sentiment, entities), near-real-time. CatchAll product is a recall-first web search API. Good for dedicated news coverage.
-- **NewsAPI.ai** - 150,000+ sources, 60+ languages, archive back to 2014. Strong Boolean filtering and concept-based search. Potentially good for backtesting given historical depth.
-- **Perigon** - AI-powered news API with event-level queries and advanced filtering.
+**Future additions:**
 
-We should run a structured evaluation of these APIs against a standard set of forecasting-relevant queries to understand which perform best for our use case. The key dimensions are: result relevance to forecasting questions, date filtering fidelity (for backtesting), coverage breadth (do they surface diverse viewpoints?), cost, and latency.
+- **Tavily** — Popular, solid quality, good agentic integration. No backtestable version.
+- **NewsCatcher** — 120,000+ global news sources, NLP enrichment (sentiment, entities), near-real-time. CatchAll product is a recall-first web search API. Good for dedicated news coverage.
+- **NewsAPI.ai** — 150,000+ sources, 60+ languages, archive back to 2014. Strong Boolean filtering and concept-based search. Potentially good for backtesting given historical depth.
+- **Perigon** — AI-powered news API with event-level queries and advanced filtering.
 
 **Critical concern for backtesting:** We need to understand which APIs are vulnerable to foresight bias - i.e., they leak new information into old search results. This can happen when articles are updated post-publication, when search indices are rebuilt with newer content, or when result ranking algorithms use signals from future engagement. This should be a dedicated investigation before we trust any API for backtesting.
 
@@ -118,11 +113,14 @@ class DataSource(ABC):
         ...
 ```
 
-Concrete implementations would include:
+**Starting implementations:**
+
+- `ValyuSearch(DataSource)` - web + proprietary, backtestable via date params
+- `ExaSearch(DataSource)` - web search, partially backtestable
+
+**Future additions:**
 
 - `TavilySearch(DataSource)` - web search, not backtestable
-- `ExaSearch(DataSource)` - web search, not backtestable
-- `ValyuSearch(DataSource)` - web + proprietary, potentially backtestable via date params
 - `NewsCatcherNews(DataSource)` - news, backtestable with date filtering
 - `PolymarketFeed(DataSource)` - prediction market prices, backtestable (historical price data)
 - `MetaculusFeed(DataSource)` - prediction market, backtestable
@@ -131,37 +129,46 @@ Concrete implementations would include:
 - `PlaywrightScraper(DataSource)` - general web scraping via Playwright, not backtestable
 - `PrivateDataSource(DataSource)` - hook for user-provided private/internal data (see §5)
 
-Each source returns `SourceResult` objects with standardised fields (content, url, published_date, retrieved_date, source_name). The `backtest_date` parameter is the key mechanism for the backtesting pipeline: when set, all sources must either return only pre-date results or raise an exception indicating they can't comply.
+Each source returns `SourceResult` objects. The `backtest_date` parameter is the key mechanism for the backtesting pipeline: when set, all sources must either return only pre-date results or raise an exception indicating they can't comply.
+
+```python
+class SourceResult(BaseModel):
+    content: str
+    url: str | None = None
+    published_date: datetime | None = None
+    retrieved_date: datetime
+    source_name: str
+```
 
 Each source also provides a `usage_guide` - structured documentation of its capabilities, supported parameters, and best practices for querying it. These guides are injected into the research agent's context so the model knows how to use each source well, rather than having to discover effective query patterns through trial and error.
 
 There's no limit to how many sources we include. Adding a new data feed should be as simple as extending the base class and registering it in the agent's tool registry.
 
-### 1.4 Research Agents
+### 1.3 Research Agents
 
-Each research run spawns M independent research agents (start with M=5, scale to M=10). Each agent receives the research plan from §1.2 and has access to all registered data sources as tools.
+Each research run spawns M independent research agents (start with M=5, scale to M=10). Each agent receives the `FormalisedQuestion` and has access to all registered data sources as tools. Agents plan their own research autonomously - there is no separate decomposition step.
 
-There are two distinct architectural approaches for how these agents work, and we should evaluate both:
+**Research planning through prompting.** The agent's system prompt encodes superforecasting methodology as guidance: identify relevant sub-questions, look up reference classes and base rates, track key actors and causal factors, consider conditional dependencies, check specific data sources (prediction markets, structured feeds). These are hints, not structured output requirements - the agent is free to plan its research however it judges most productive. There will always be edge cases and novel question types where rigid decomposition fails, so we leave this to the agent's judgement.
 
-**Approach A: Coupled search + reasoning.** Each agent both searches and reasons within its loop. The agent searches, reads, forms a tentative view, identifies gaps, searches for those gaps, and repeats. It then produces a probability estimate alongside its research summary. This mirrors how skilled human researchers actually work - hypothesis formation guides further research.
+**Coupled search + reasoning.** Each agent both searches and reasons within its loop. The agent searches, reads, forms a tentative view, identifies gaps, searches for those gaps, and repeats. It then produces a probability estimate alongside its reasoning. This mirrors how skilled human researchers actually work - hypothesis formation guides further research.
 
-**Approach B: Separated state-builder + reasoner.** One set of agents does deep research only, producing comprehensive information briefings without making predictions. A separate set of reasoning agents then reads these briefings and produces forecasts without access to search tools. The advantage is cleaner separation of concerns - the reasoning agents can't be swung by selectively finding confirming evidence, and each stage can be tested and improved independently. The disadvantage is that the research agents don't know what the reasoners will need, and the reasoners can't follow up on gaps.
-
-We should evaluate both approaches against each other on our backtest suite. The right answer may also vary by question type or domain.
+**Future addition: Separated search + reasoning.** An alternative where one set of agents does deep research only (producing information briefings without predictions), and a separate set of reasoning agents reads these briefings and produces forecasts without search access. Cleaner separation of concerns, but research agents don't know what reasoners will need. Will be added as a configurable option once the coupled baseline is working.
 
 **Light touch on the loop itself.** We should not over-engineer the agentic search loop. Frontier models are increasingly capable at multi-step tool use, and the marginal value of elaborate loop orchestration is declining. Each agent should:
 
-1. Receive the research plan and available tools
+1. Receive the formalised question and available tools
 2. Execute its research autonomously, following whatever path it judges most productive
-3. Report back with a detailed, structured summary of its findings - including sources, dates, and any identified biases or gaps in the available information
+3. Report back with its probability estimate and free-form reasoning trace
 
-The structured summary is what gets passed up to the aggregation stage. This keeps context pollution manageable when recombining across agents.
+**Sub-agent delegation.** For complex questions, agents can spawn sub-agents via a `delegate_to_subagent(goal: str)` tool call. This is how question decomposition happens in practice - an agent decides a question needs to be broken down, spawns sub-agents with specific research goals, and synthesises their findings. This is supported but not required; simple questions won't need it.
 
-**Sub-agent spawning and off-the-shelf deep research.** For complex questions, individual research agents may want to spawn sub-agents for specific sub-questions. This is a pattern we should support but not require. Before building custom deep-research orchestration, we should evaluate off-the-shelf solutions - there's significant existing work in agentic research (e.g. deep research capabilities from model providers, Exa's research endpoint, open-source research agent frameworks). If an off-the-shelf tool produces high-quality research briefings, we should use it as a data source or agent backbone rather than duplicating that work. Where we do build our own, we should reuse existing agentic patterns (e.g. from the Claude Agents SDK or Pydantic AI's agent orchestration).
+Before building custom deep-research orchestration, we should evaluate off-the-shelf solutions - there's significant existing work in agentic research (e.g. deep research capabilities from model providers, Exa's research endpoint, open-source research agent frameworks). If an off-the-shelf tool produces high-quality research briefings, we should use it as a data source or agent backbone rather than duplicating that work. Where we do build our own, we should reuse existing agentic patterns (e.g. from the Claude Agents SDK or Pydantic AI's agent orchestration).
+
+**Future addition: Structured decomposition step.** If we find that agents' autonomous research planning is insufficient - e.g. they consistently miss important sub-questions or fail to check obvious reference classes - we can reintroduce a structured decomposition step as a pipeline stage between refinement and research. This would produce a typed research plan that agents follow. For now, we start without it.
 
 **Parallel execution.** All M research agents run in parallel. Within each agent, tool calls should also be parallelised where possible (e.g. querying multiple data sources simultaneously).
 
-### 1.5 Observability
+### 1.4 Observability
 
 Full observability over the research pipeline is essential, both for debugging and for understanding what drives forecast quality.
 
@@ -184,32 +191,31 @@ This hierarchy lets you filter at any level: see all traces for a question, dril
 
 ### 2.1 Individual Agent Forecasts
 
-Each of the M research agents, having completed its research, produces:
+Each of the M research agents, having completed its research, produces an `AgentForecast`:
 
-- A probability estimate (0 to 1 for binary; distribution parameters for distributional)
-- A reasoning chain explaining the estimate
-- Key factors for and against
-- Explicit statement of the base rate / reference class used
-- Confidence in the estimate (meta-uncertainty)
+```python
+class AgentForecast(BaseModel):
+    agent_id: str
+    probability: float  # 0 to 1
+    reasoning: str  # free-form reasoning trace
+```
 
-Because each agent couples search and reasoning (§1.4), these forecasts are naturally diverse - different agents found different information and formed different views.
+The reasoning trace is unconstrained free-form text. The agent's system prompt hints at good forecasting practices - start with base rates, consider inside and outside views, list factors for and against, avoid anchoring on recency - but the model is free to structure its reasoning however it wants. We don't force the LLM into a rigid schema that might reduce reasoning quality.
 
-**Prompting strategy.** The prompt should encode forecasting best practices, but the entire prompting strategy is an experimental surface we expect to iterate on heavily. Starting points:
+**Future addition:** Structured fields (factors_for, factors_against, base_rate, base_rate_source, evidence items, confidence/meta-uncertainty) as optional fields on `AgentForecast`, if downstream aggregation or error diagnostics (Technique 6) benefit from structured decomposition of reasoning.
 
-- Start with the base rate or reference class
-- Adjust based on specific evidence found during research
-- Consider both inside and outside views
-- Explicitly list reasons the estimate could be too high or too low
-- Avoid anchoring on a single piece of evidence or the most recent news
+Because each agent couples search and reasoning (§1.3), these forecasts are naturally diverse - different agents found different information and formed different views.
 
-These are hypotheses, not fixed rules. Different prompting strategies may work better for different question types or domains. The system should make it easy to swap prompt templates and measure the impact on calibration.
+**Prompting strategy.** The prompt should encode forecasting best practices, but the entire prompting strategy is an experimental surface we expect to iterate on heavily. These are hypotheses, not fixed rules. Different prompting strategies may work better for different question types or domains. The system should make it easy to swap prompt templates and measure the impact on calibration.
+
+**Reasoning trace updates.** When new information arrives after an initial forecast (e.g. breaking news, a new data release, a market move), the system should not re-run the entire pipeline from scratch. Instead, the new evidence should be used to *update the existing reasoning trace*. The agent receives its prior reasoning trace and the new evidence, and produces an updated trace with a revised probability. This is cheaper, faster, and preserves the reasoning history - you can see how each piece of evidence shifted the estimate. It also connects directly to path independence (Technique 10a): a well-calibrated update process should produce the same final probability regardless of whether the evidence arrived incrementally or all at once. If it doesn't, that's a diagnostic signal. This is a future capability - the initial system produces one-shot forecasts - but the architecture should not preclude it. The `AgentForecast` reasoning trace should be designed so that it can be fed back into an agent as prior context for an update round.
 
 **Known LLM failure modes to mitigate:**
 
 - Universal overconfidence: LLMs produce overconfident predictions across domains
 - Extended reasoning paradox: longer reasoning chains can worsen calibration by generating persuasive arguments that inflate confidence
 - Anchoring on recency: excessive weight on recent news over base rates
-- Hedging toward 50%: systematic pull toward maximum uncertainty (corrected in calibration, §2.4)
+- Hedging toward 50%: systematic pull toward maximum uncertainty (corrected in calibration, §2.3)
 - Domain-specific weaknesses: consistently worse on economics/finance than political forecasting
 - Conjunction fallacy: underperform on conjunction questions and unprecedented events
 
@@ -242,15 +248,28 @@ class Aggregator(ABC):
         ...
 ```
 
-**Aggregator implementations:**
+Each aggregator produces an `AggregatedForecast`:
 
-- **MeanAggregator** - Simple mean of M probabilities. The baseline. Surprisingly strong because the diversity of search paths across agents does most of the work.
-- **TrimmedMeanAggregator** - Remove outlier agents before averaging.
-- **ExtremisedMeanAggregator** - Mean pushed toward extremes (see calibration, §2.3).
-- **SupervisorAggregator** - An LLM-based aggregator that receives all M forecasts with their reasoning chains and produces a reconciled estimate. It can identify areas of agreement/disagreement, check for systematic biases, and do targeted additional search to resolve factual disputes. Should have access to explicit bias-checking prompts, e.g.:
+```python
+class AggregatedForecast(BaseModel):
+    aggregator_id: str
+    probability: float
+    reasoning: str  # free-form — how the aggregation was decided
+    agent_forecasts: list[AgentForecast]  # the inputs
+```
+
+**Starting implementations:**
+
+- **MeanAggregator** — Simple mean of M probabilities. The baseline. Surprisingly strong because the diversity of search paths across agents does most of the work.
+- **SupervisorAggregator** — An LLM-based aggregator that receives all M forecasts with their reasoning traces and produces a reconciled estimate. It can identify areas of agreement/disagreement, check for systematic biases, and do targeted additional search to resolve factual disputes. Should have access to explicit bias-checking prompts, e.g.:
   - "The ensemble median is X. List three reasons this could be too high. List three reasons this could be too low."
   - "Are any of the individual forecasts anchored on a single recent news article?"
   - "What base rate would an uninformed forecaster use? How far is the ensemble from that base rate, and is the deviation justified?"
+
+**Future additions:**
+
+- **TrimmedMeanAggregator** — Remove outlier agents before averaging.
+- **ExtremisedMeanAggregator** — Mean pushed toward extremes (see calibration, §2.3).
 
 The system should support running multiple aggregators on the same set of agent forecasts in a single pipeline run. This lets us compare aggregation strategies head-to-head on every question, not just in aggregate across an eval suite. Each aggregator produces its own forecast output, and evaluation can track which aggregator performs best over time.
 
@@ -301,7 +320,7 @@ Use a model with a known knowledge cutoff (e.g. an open-weight model trained on 
 
 **LLM-as-judge filter.** A separate system - distinct from the forecasting agents - that reviews search results for evidence of foreknowledge relative to the backtest date. This runs as a dedicated filtering layer: every search result returned during a backtesting run passes through the judge, which flags or removes results that contain information from after the backtest date.
 
-**Implementation.** The `backtest_date: datetime | None` parameter on the `DataSource` base class (§1.3) is the primary mechanism. When set:
+**Implementation.** The `backtest_date: datetime | None` parameter on the `DataSource` base class (§1.2) is the primary mechanism. When set:
 
 - Backtestable sources apply strict date filtering on original publication date
 - Non-backtestable sources raise `NotBacktestable` and are excluded from the run
@@ -313,12 +332,22 @@ Use a model with a known knowledge cutoff (e.g. an open-weight model trained on 
 
 This is one of the hardest problems in the space. The quality of the evaluation dataset directly determines whether backtesting results are meaningful.
 
+```python
+class EvalQuestion(BaseModel):
+    question_id: str
+    question_text: str
+    resolution_date: date
+    resolution: bool | float  # True/False for binary, value for distributional
+    source: str  # "metaculus", "polymarket", "forecastbench"
+    domain: str | None = None
+    metadata: dict = {}  # source-specific fields (community prediction, market price, etc.)
+```
+
 **Primary sources for evaluation questions:**
 
-1. **Metaculus historical questions.** Actually asked in real time, with clear resolution criteria and verified outcomes. Best available source for clean evaluation data.
-2. **Polymarket resolved markets.** Similarly asked in real time, with market-verified resolution. Different distribution of question types (more crypto/politics, fewer science/tech).
-3. **ForecastBench.** A standardised benchmark for evaluating forecasting systems, with curated question sets and established baselines for comparison.
-4. **Other public benchmark datasets.** Published question-resolution pairs from forecasting benchmarks and tournaments.
+1. **Metaculus historical questions** (starting point). REST API at `api.metaculus.com/api/posts/`, with `?statuses=resolved&forecast_type=binary` for resolved binary questions. Token auth via `Authorization` header. ~4,000+ resolved questions with clear resolution criteria, verified outcomes, and community predictions available for comparison. Best available source for clean evaluation data.
+2. **ForecastBench.** ICLR 2025 benchmark with 5,948 questions. Available via HuggingFace datasets. Published superforecaster baselines (Brier ~0.093) and biweekly question releases for ongoing evaluation.
+3. **Polymarket resolved markets.** Gamma API for resolved markets with historical price data. Different distribution of question types (more crypto/politics, fewer science/tech).
 
 **Sampling considerations:** These sources have different distributions over question types, difficulty levels, and domains. Naively combining them produces a biased dataset. We should:
 
@@ -329,7 +358,7 @@ This is one of the hardest problems in the space. The quality of the evaluation 
 
 **Auto-generated questions.** Supplement with questions generated from structured data sources (economic time series, conflict event databases, Wikipedia) using template approaches. These are useful for coverage but need human validation to confirm they're reasonable questions.
 
-**Question generation for users.** Beyond evaluation, question generation is also a product concern. Users often don't know what forecasts they need - they have a topic or a decision and need help formulating the right questions. This is a separate pipeline that takes a topic or decision context and generates a set of relevant forecasting questions. The same decomposition logic from §1.2 can be adapted: given a decision, what questions would a superforecaster want answered before making that decision? This is distinct from the eval dataset generation but shares underlying technology.
+**Question generation for users.** Beyond evaluation, question generation is also a product concern. Users often don't know what forecasts they need - they have a topic or a decision and need help formulating the right questions. This is a separate pipeline that takes a topic or decision context and generates a set of relevant forecasting questions: given a decision, what questions would a superforecaster want answered before making that decision? This is distinct from the eval dataset generation but shares underlying technology.
 
 ### 3.5 Evaluation Tooling
 
@@ -406,7 +435,7 @@ The backtesting infrastructure (§3) generates the reward signal: Brier score on
 
 The forecasting engine described above operates on public information. For many use cases, the real value comes from combining external forecasting with internal organisational data - proprietary market data, internal memos, CRM data, supply chain information.
 
-This should be implemented as an additional `DataSource` (§1.3):
+This should be implemented as an additional `DataSource` (§1.2):
 
 ```python
 class PrivateDataSource(DataSource):
@@ -445,12 +474,7 @@ The diagram below shows the full pipeline. Boxes marked with `[*]` indicate poin
 │                  QUESTION REFINEMENT                        │
 │        Classify type · Formalise resolution criteria         │
 │              Lightweight search for grounding                │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                 QUESTION DECOMPOSITION                       │
-│     Sub-questions · Base rates · Research plan · Sources     │
+│                → FormalisedQuestion                          │
 └────────────────────────┬────────────────────────────────────┘
                          │
               ┌──────────┼──────────┐
@@ -460,27 +484,27 @@ The diagram below shows the full pipeline. Boxes marked with `[*]` indicate poin
 │  RESEARCH     ││  RESEARCH     ││  RESEARCH     │
 │  AGENT 1      ││  AGENT 2      ││  AGENT M      │
 │               ││               ││               │
-│ [*] Coupled   ││ [*] Coupled   ││ [*] Coupled   │
-│  or Separated ││  or Separated ││  or Separated │
+│  Autonomous   ││  Autonomous   ││  Autonomous   │
+│  research     ││  research     ││  research     │
+│  planning     ││  planning     ││  planning     │
 │               ││               ││               │
 │  Search ↔     ││  Search ↔     ││  Search ↔     │
 │  Reason       ││  Reason       ││  Reason       │
 │     ↓         ││     ↓         ││     ↓         │
-│  Summary +    ││  Summary +    ││  Summary +    │
-│  Probability  ││  Probability  ││  Probability  │
+│ AgentForecast ││ AgentForecast ││ AgentForecast │
 └───────┬───────┘└───────┬───────┘└───────┬───────┘
         │                │                │
         └────────────────┼────────────────┘
                          │
-              ┌──────────┼──────────┐
-              │          │          │     [*] Multiple aggregators
-              ▼          ▼          ▼         run in parallel
-     ┌──────────┐ ┌───────────┐ ┌────────────┐
-     │   Mean   │ │ Supervisor│ │  Trimmed   │
-     │Aggregator│ │Aggregator │ │   Mean     │
-     └────┬─────┘ └─────┬─────┘ └─────┬──────┘
-          │              │              │
-          ▼              ▼              ▼
+              ┌──────────┴──────────┐
+              │                     │     [*] Multiple aggregators
+              ▼                     ▼         run in parallel
+     ┌──────────────┐    ┌───────────────┐
+     │     Mean     │    │  Supervisor   │
+     │  Aggregator  │    │  Aggregator   │
+     └──────┬───────┘    └───────┬───────┘
+            │                    │
+            ▼                    ▼
 ┌─────────────────────────────────────────────────────────────┐
 │             [*] CALIBRATION (optional)                       │
 │          Platt scaling · Extremisation · Identity            │
@@ -489,7 +513,7 @@ The diagram below shows the full pipeline. Boxes marked with `[*]` indicate poin
                          ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                  FORECAST OUTPUT(S)                          │
-│      One per aggregator · Probability + reasoning + sources │
+│       One per aggregator · ForecastOutput                    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -497,11 +521,11 @@ The diagram below shows the full pipeline. Boxes marked with `[*]` indicate poin
 
 **Pydantic AI** with **pydantic-graph** for the overall agent orchestration. Rationale:
 
-- Type-safe structured outputs (essential for forecast formats, research plans, etc.)
+- Type-safe structured outputs (essential for forecast formats)
 - Built-in graph support for defining the multi-step pipeline as a state machine
-- `GraphRunContext` as shared state - all nodes in the pipeline operate on a common typed context object, which is a clean abstraction for passing the evolving forecast state (question, research results, individual forecasts, aggregated outputs) through the graph
-- Native Logfire integration for observability (§1.5)
-- Model-agnostic: supports all major providers, making it easy to swap frontier models
+- `GraphRunContext` as shared state - all nodes in the pipeline operate on a common typed context object
+- Native Logfire integration for observability (§1.4)
+- Model-agnostic: supports all major providers (focusing on OpenAI and Anthropic), making it easy to swap frontier models
 - MCP support for tool integration
 - Durable execution for long-running research agents
 - Active development by the Pydantic team (Sequoia-backed)
@@ -509,19 +533,57 @@ The diagram below shows the full pipeline. Boxes marked with `[*]` indicate poin
 The pipeline maps naturally onto a pydantic-graph:
 
 ```
-[Refinement] → [Decomposition] → [ParallelResearch] → [ParallelAggregation] → [Calibration?] → [End]
+[Refinement] → [ParallelResearch] → [Aggregation] → [Calibration?] → [End]
 ```
 
-Each node is a `BaseNode` subclass with typed state via `GraphRunContext`. The `ParallelResearch` node spawns M concurrent agent runs. The `ParallelAggregation` node runs all configured aggregators concurrently, each producing its own forecast. The `Calibration` node is optional and toggled by configuration. The graph can be interrupted and resumed (useful for long research runs or human-in-the-loop review).
+Each node is a `BaseNode` subclass with typed state via `GraphRunContext`. The `ParallelResearch` node spawns M concurrent agent runs. The `Aggregation` node runs all configured aggregators, each producing its own forecast. The `Calibration` node is optional and toggled by configuration. The graph can be interrupted and resumed (useful for long research runs or human-in-the-loop review).
+
+**Pipeline state and dependencies:**
+
+```python
+@dataclass
+class ForecastState:
+    """Mutable state that flows through the pipeline graph."""
+    question: FormalisedQuestion | None = None
+    agent_forecasts: list[AgentForecast] = field(default_factory=list)
+    aggregated_forecasts: list[AggregatedForecast] = field(default_factory=list)
+    final_output: ForecastOutput | None = None
+
+@dataclass
+class PipelineDeps:
+    """Immutable dependencies injected into all graph nodes."""
+    model: Model
+    search_sources: list[DataSource]
+    aggregators: list[Aggregator]
+    config: PipelineConfig
+```
+
+**Final output:**
+
+```python
+class ForecastOutput(BaseModel):
+    question: FormalisedQuestion
+    forecasts: list[AggregatedForecast]  # one per aggregator
+    metadata: dict  # run_id, timestamps, model info, costs
+```
 
 ### 6.3 Terminal Interface
 
-For now, the primary interface is a terminal CLI. This should support:
+For now, the primary interface is a terminal CLI. Configuration is controlled via CLI flags that map to the config schema (§6.5).
 
-- Running a single forecast: `prescience forecast "Will X happen by Y?"`
-- Running a backtested evaluation: `prescience eval --dataset metaculus --backtest-date 2024-07-01`
-- Comparing aggregators or configurations: `prescience eval --compare`
-- Inspecting a past run: `prescience inspect <run_id>`
+```bash
+# Single forecast
+prescience forecast "Will X happen by Y?" --agents 5 --model openai:gpt-4o
+
+# Backtested evaluation
+prescience eval --dataset metaculus --backtest-date 2024-07-01 --agents 5
+
+# Compare aggregation strategies
+prescience eval --compare --aggregator mean,supervisor
+
+# Inspect a past run
+prescience inspect <run_id>
+```
 
 The CLI should produce clean, readable output - formatted probabilities, reasoning summaries, and links to full trace data in Logfire. This is the interface we'll use day-to-day for development and experimentation, so it needs to be pleasant to work with.
 
@@ -532,48 +594,86 @@ prescience/
 ├── src/
 │   ├── questions/
 │   │   ├── refine.py          # Question refinement (§1.1)
-│   │   ├── decompose.py       # Decomposition into research plan (§1.2)
-│   │   └── types.py           # QuestionType, FormalisedQuestion, ResearchPlan
+│   │   └── types.py           # FormalisedQuestion, AgentForecast, AggregatedForecast, etc.
 │   ├── research/
-│   │   ├── agent.py           # Individual research agent (§1.4)
+│   │   ├── agent.py           # Individual research agent (§1.3)
 │   │   └── prompts/           # System prompts for research + forecasting
 │   ├── sources/
-│   │   ├── base.py            # DataSource ABC, SourceResult (§1.3)
-│   │   ├── search/            # Tavily, Exa, Valyu implementations
-│   │   ├── news/              # NewsCatcher, NewsAPI.ai implementations
-│   │   ├── markets/           # Polymarket, Metaculus feeds
-│   │   ├── structured/        # FRED, ACLED, Yahoo Finance
-│   │   ├── scraper.py         # Playwright-based web scraper
+│   │   ├── base.py            # DataSource ABC, SourceResult (§1.2)
+│   │   ├── search/
+│   │   │   ├── valyu.py       # ValyuSearch (primary)
+│   │   │   └── exa.py         # ExaSearch (secondary)
+│   │   ├── markets/           # Polymarket, Metaculus feeds (future)
+│   │   ├── structured/        # FRED, ACLED, Yahoo Finance (future)
 │   │   └── private.py         # Private data source hook (§5)
 │   ├── aggregation/
 │   │   ├── base.py            # Aggregator ABC (§2.2)
-│   │   ├── mean.py            # MeanAggregator, TrimmedMeanAggregator
-│   │   ├── extremised.py      # ExtremisedMeanAggregator
+│   │   ├── mean.py            # MeanAggregator
 │   │   └── supervisor.py      # SupervisorAggregator (LLM-based)
 │   ├── calibration/
 │   │   └── calibrate.py       # Platt scaling, extremisation (§2.3)
 │   ├── pipeline/
 │   │   ├── graph.py           # Pydantic-graph pipeline definition
-│   │   ├── context.py         # GraphRunContext state types
+│   │   ├── state.py           # ForecastState, PipelineDeps
 │   │   ├── runner.py          # Single question forecast runner
 │   │   └── batch.py           # Batch forecasting over multiple questions
 │   ├── eval/
 │   │   ├── metrics.py         # Brier, calibration, resolution, domain breakdown
 │   │   ├── run.py             # EvalRun class (§3.5)
-│   │   ├── questions/         # Eval question loaders (Metaculus, Polymarket, ForecastBench, etc.)
+│   │   ├── questions/         # Eval question loaders (Metaculus, Polymarket, ForecastBench)
 │   │   └── plots.py           # Calibration plots, domain breakdowns
 │   ├── backtest/
 │   │   ├── engine.py          # Backtesting orchestrator
 │   │   ├── foreknowledge.py   # LLM-as-judge foreknowledge filter (§3.3)
 │   │   └── foresight_audit.py # API foresight bias evaluation
 │   ├── cli.py                 # Terminal interface (§6.3)
-│   └── config.py              # Model selection, API keys, agent count M, toggles
+│   └── config.py              # PipelineConfig and sub-configs (§6.5)
 ├── evals/
 │   ├── datasets/              # Evaluation question sets
 │   ├── results/               # Saved eval runs
 │   └── scripts/               # Scripts to generate/sample eval datasets
 ├── tests/
 └── pyproject.toml
+```
+
+### 6.5 Configuration
+
+All pipeline behaviour is controlled through a typed config that maps directly to CLI flags.
+
+```python
+class ModelConfig(BaseModel):
+    provider: str = "openai"  # "openai", "anthropic"
+    model_name: str = "gpt-4o"
+    temperature: float = 0.7
+
+class SearchConfig(BaseModel):
+    enabled_sources: list[str] = ["valyu", "exa"]
+    max_results_per_source: int = 10
+
+class AgentConfig(BaseModel):
+    num_agents: int = 5
+    allow_subagents: bool = True
+    max_search_rounds: int = 10
+
+class AggregationConfig(BaseModel):
+    aggregators: list[str] = ["mean", "supervisor"]
+
+class CalibrationConfig(BaseModel):
+    enabled: bool = False
+    method: str = "platt"  # "platt", "extremise", "identity"
+    calibration_data_path: str | None = None
+
+class BacktestConfig(BaseModel):
+    backtest_date: date
+    foreknowledge_filter: bool = True
+
+class PipelineConfig(BaseModel):
+    model: ModelConfig = ModelConfig()
+    search: SearchConfig = SearchConfig()
+    agents: AgentConfig = AgentConfig()
+    aggregation: AggregationConfig = AggregationConfig()
+    calibration: CalibrationConfig = CalibrationConfig()
+    backtest: BacktestConfig | None = None
 ```
 
 ---
@@ -606,20 +706,18 @@ Run logical consistency checks across related forecasts. If P(A) = 0.7 and P(B) 
 
 ## 8. Key Technical Decisions
 
-Decisions that need to be made early and will shape the system significantly:
+1. **Base model for live forecasting.** ✅ Model-agnostic via PydanticAI. Focusing on OpenAI and Anthropic models initially. Easy to swap as new frontier models are released.
 
-1. **Base model for live forecasting.** Whichever frontier model performs best on reasoning + tool use. Should be model-agnostic in the codebase so we can swap easily.
-
-2. **Search API selection.** Needs structured evaluation (§1.3). Both best-available (for live) and backtestable (for evaluation) tiers.
+2. **Search API selection.** ✅ Valyu (primary, backtestable) + Exa (secondary, partially backtestable). Additional sources (Tavily, NewsCatcher, NewsAPI.ai, Perigon) as future additions via the DataSource pattern (§1.2).
 
 3. **Number of agents (M).** Start at 5, scale to 10. Diminishing returns beyond ~15. Cost scales linearly with M.
 
-4. **Coupled vs. separated search+reasoning.** Evaluate both approaches (§1.4) against each other on the backtest suite.
+4. **Coupled vs. separated search+reasoning.** ✅ Coupled first (§1.3). Separated as a future configurable option.
 
-5. **Aggregation strategy.** Which aggregators to run, and whether a single best aggregator emerges or different ones win in different domains (§2.2).
+5. **Aggregation strategy.** ✅ Mean + Supervisor to start (§2.2). TrimmedMean and ExtremisedMean as future additions. Track which aggregator performs best per domain.
 
-6. **Evaluation dataset composition.** How to sample across sources and domains to avoid bias (§3.4). This is the hardest unsolved problem.
+6. **Evaluation dataset composition.** Starting with Metaculus (~4,000+ resolved questions). ForecastBench and Polymarket as additional sources. Sampling strategy across domains still needs work (§3.4).
 
 7. **Calibration data bootstrapping.** Need ~200 resolved forecasts to fit calibration. Bootstrap from retroactive evaluation on historical benchmark questions.
 
-8. **RL decision.** When/whether to invest in fine-tuning vs. continuing to improve scaffolding on frontier models (§4.1).
+8. **RL decision.** Deferred. Focus on scaffolding with frontier models first. Revisit when/if retrieval-in-the-loop RL becomes practical (§4.1).

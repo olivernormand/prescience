@@ -5,6 +5,8 @@
 
 ## Overview
 
+**Tetlock Commandment:** 6 (distinguish degrees of doubt → 5d)
+
 After producing a forecast, run checks to catch errors before output. These are safety nets - they don't improve the forecast directly but catch cases where the system has made a mistake it could have detected.
 
 **A prerequisite problem:** Current models show massive run-to-run variation. You can get substantially different probability estimates from the same model on the same question just by running it again. Until this is addressed (likely by running ~10 times and averaging to get something internally consistent), it's worth asking how useful any downstream validation really is. If the raw signal is noisy, sophisticated post-processing may be polishing noise. The most important "validation" might simply be ensembling enough runs to beat down the variance.
@@ -74,9 +76,29 @@ Both could serve as features for the meta-classifier, or as standalone red flags
 
 ---
 
+### 5d. Probability Granularity Discipline (Tetlock Commandment 6)
+
+Tetlock's sixth commandment: "Strive to distinguish as many degrees of doubt as the problem permits." GJP data showed that superforecasters achieved calibration of 0.01 (1 percentage point average error), and that accuracy *degraded* when predictions were rounded to the nearest 10%. The granularity of probability estimates correlates with accuracy - forecasters who distinguish 60% from 65% outperform those who cluster on round numbers.
+
+**The problem for LLMs:** Models tend to cluster on round numbers (50%, 70%, 80%, 90%). This is a known failure mode - the model reaches for a "feels about right" round number rather than reasoning precisely about where the evidence places the probability. A forecast of 70% when the evidence actually supports 64% is throwing away signal.
+
+**Implementation as a validation check:**
+1. After the agent produces a probability, check whether it falls on a round number (multiples of 10, or even 5)
+2. If it does, prompt the agent to reconsider: "You estimated 70%. Is the evidence more consistent with 65-69% or 71-75%? Be precise."
+3. Track round-number frequency across runs - a system that produces round numbers >50% of the time is being imprecise
+
+**Implementation as a prompt directive:** Include in the agent's reasoning prompt: "State your probability to at least the nearest 5%. If the evidence supports distinguishing finer (e.g. 62% vs 67%), do so. Avoid defaulting to round numbers - there is a real difference between 60% and 65%."
+
+**Why this matters beyond aesthetics:** Granularity is a proxy for the depth of reasoning. A forecaster who says "about 70%" hasn't thought as carefully as one who says "68% - the base rate is 60%, and the two strong pieces of evidence I found each push it up by about 4 points." The precision forces a more rigorous accounting of how each piece of evidence shifts the probability.
+
+**Caveat:** False precision is worse than honest imprecision. The goal isn't to force 1% granularity on every question - it's to avoid lazy rounding when the evidence supports more precision. For genuinely uncertain questions (forecastability gate, Technique 7d), reporting "roughly 50-55%" is more honest than a spuriously precise "52%."
+
+---
+
 ## What to Measure
 
 - How often do raw forecasts violate consistency constraints (5a)? Does correction improve Brier scores?
 - Does stability (5b) predict actual forecast error?
 - Does meta-prediction (5c) successfully identify which forecasts are likely to be wrong?
 - Does routing low-confidence forecasts to extended processing improve overall accuracy?
+- What fraction of agent forecasts fall on round numbers (5d)? Does prompting for granularity improve Brier scores?

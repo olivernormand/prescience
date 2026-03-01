@@ -5,6 +5,8 @@
 
 ## Overview
 
+**Tetlock Commandments:** 8 (look for errors behind your mistakes), 10 (deliberative practice with clear feedback)
+
 The automated improvement loop, made concrete. Forecast one period's events, analyse what went wrong, generate improvements, apply them to the next period, repeat. This is how the system gets better over time - replicating the experience loop that makes human superforecasters good.
 
 ## How It Works

@@ -5,6 +5,8 @@
 
 ## Overview
 
+**Tetlock Commandment:** 1 (triage — focus on questions where effort pays off → 7d)
+
 Not all questions deserve the same amount of compute. Some questions are well-served by a quick base-rate lookup; others need deep multi-agent research. These techniques help decide where to spend resources.
 
 **A caution:** All of these optimisations ultimately risk reducing accuracy. Spending less compute on "easy" questions assumes you can reliably identify which questions are easy before you've actually researched them. Getting that classification wrong means you under-invest in a question that actually needed more work. The baseline of treating all questions equally is simple and safe; these techniques should only be adopted if they demonstrably improve aggregate performance, not just reduce cost.
@@ -56,8 +58,32 @@ Different types of evidence arrive at different speeds. Diplomatic signals appea
 
 ---
 
+### 7d. Triage / Forecastability Gate (Tetlock Commandment 1)
+
+Tetlock's *first* commandment: focus on questions in the "Goldilocks zone" - tractable but not trivial. Some questions are fundamentally unpredictable ("clouds" in Tetlock's terminology), and spending effort on them doesn't just waste compute - it *degrades* output quality because the system generates false confidence on unforecastable questions.
+
+**This is distinct from compute allocation (7a/7b).** Those techniques decide *how much* effort to spend. Triage decides whether to forecast *at all*, or at minimum flags the question's forecastability so downstream consumers know how much to trust the output.
+
+**The forecastability spectrum:**
+- **Clock-like questions:** Driven by stable, measurable forces. "Will the US unemployment rate exceed 5% next quarter?" Base rates are strong, causal models are well-understood, data is available. High forecastability.
+- **Cloud-like questions:** Dominated by chaotic dynamics, reflexivity, or genuine novelty. "Will a new social media platform overtake TikTok by 2027?" No stable base rate, outcome depends on emergent behaviour. Low forecastability.
+- **The Goldilocks zone:** Questions where evidence can genuinely update the probability away from the base rate, but the outcome isn't already obvious. This is where the system adds value.
+
+**Implementation:** A lightweight classification step early in the pipeline (during or after question refinement, §1.1). The classifier assesses:
+- Does a meaningful reference class exist?
+- Is the time horizon short enough that current evidence is relevant?
+- Are there observable leading indicators?
+- Is the outcome driven by a small number of identifiable causal factors, or by chaotic/emergent dynamics?
+
+The output is a forecastability score or tier (high / medium / low), attached to the question metadata. Low-forecastability questions get flagged - not necessarily blocked, but the output should carry an explicit "this question may be inherently unpredictable" caveat. This prevents the system from producing a confident 73% on a question where the honest answer is "we have no idea, the base rate is ~50%, and nothing we found moves it meaningfully."
+
+**Evidence:** Tetlock's original Expert Political Judgment (2005) research showed that experts performed worst precisely on the questions they found most interesting - typically the most complex, cloud-like questions. GJP superforecasters learned to recognise low-forecastability questions and either avoid them or assign probabilities close to the base rate with low confidence.
+
+---
+
 ## What to Measure
 
 - Does Kelly-weighted compute allocation (7a) improve aggregate Brier score compared to uniform allocation?
 - For each domain, does the full pipeline beat frugal/base-rate agents (7b)?
 - Do nowcasting adjustments (7c) improve forecasts for time-sensitive questions?
+- Does the forecastability gate (7d) improve aggregate Brier score by filtering or flagging low-forecastability questions? Does it reduce the incidence of confident-but-wrong forecasts?

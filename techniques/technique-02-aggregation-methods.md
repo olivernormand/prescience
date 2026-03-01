@@ -5,6 +5,8 @@
 
 ## Overview
 
+**Tetlock Commandments:** 9 (bring out the best in others → 2f)
+
 After M research agents each produce a probability estimate, we need to combine them into one (or more) final numbers. This is the aggregation step, implemented as pluggable `Aggregator` classes in the pipeline. The README already defines the architecture - this document covers the specific methods and their tradeoffs.
 
 The honest starting point: simple averaging is surprisingly hard to beat. The diversity of search paths across agents does most of the work. Fancier aggregation methods add value only when the agents are meaningfully different from each other.
@@ -71,11 +73,48 @@ Mimics how the best human forecasting teams actually work: after making initial 
 
 ---
 
+### 2f. Cooperative Team Forecasting (GJP-Inspired)
+
+Inspired by how the best Good Judgment Project teams operate. The key insight from GJP research: top-performing teams weren't just collections of individually strong forecasters - they were groups that *worked well together*. The diversity of cognitive styles within the team reduced correlated errors, and the cooperative dynamic meant that bad reasoning got challenged before it infected the final forecast.
+
+**How this differs from Delphi (2e):** Delphi is structured and anonymous - agents see numbers and reasoning, revise in isolation, repeat. The GJP team model is more organic: agents have distinct personalities and cognitive styles, and they *argue cooperatively*. The goal isn't convergence through averaging rounds - it's collective intelligence through productive disagreement.
+
+**How this differs from ensemble configuration (2c):** In 2c, agents have different *strategies* (different search approaches, different reasoning frameworks). Here, agents all have the same goal and the same problem, but different *personalities* - some are naturally more disagreeable, some more cautious, some more willing to take contrarian positions. The diversity comes from cognitive style, not task assignment.
+
+**The mechanism:**
+1. All M agents independently research and forecast the same question (as in the current architecture)
+2. Agents are assigned distinct personality profiles - not different research strategies, but different cognitive dispositions. Examples:
+   - A "challenger" personality that's naturally sceptical and pushes back on weak reasoning
+   - A "synthesiser" that looks for common ground and tries to reconcile disagreements
+   - An "outside-view anchor" that stubbornly returns to base rates when others get swept up in narratives
+   - A "detail-oriented" personality that fixates on specific evidence quality and source reliability
+   - A "contrarian" that's disposed to ask "what if everyone here is wrong?"
+3. After initial independent forecasts, agents enter a **cooperative deliberation** phase: they share findings, challenge each other's reasoning, and argue - but cooperatively, not adversarially. The goal is to *improve the group's forecast*, not to win the argument
+4. The group works toward a shared forecast through productive disagreement
+
+**Why personality diversity matters:** If all agents think the same way, they make the same mistakes. The evidence from GJP is that diversity of *thinking style* is what drives forecast quality - it reduces the probability that a bad forecast survives unchallenged. A team where everyone agrees easily produces confident, correlated errors. A team where someone always asks "but what about the base rate?" or "are we anchoring on that one news article?" catches mistakes that homogeneous groups miss.
+
+**Key distinction from adversarial approaches (Technique 10d):** This isn't debate. The agents aren't trying to defeat each other's arguments. They're trying to arrive at the best possible collective forecast. The "disagreeable" personality isn't a devil's advocate performing a role - it's an agent that genuinely has a lower threshold for accepting weak reasoning. The dynamic is a team that disagrees agreeably.
+
+**Implementation considerations:**
+- Personality profiles are prompt modules that shape the agent's disposition, not its research strategy or reasoning framework (those come from Techniques 3 and 4). An agent can be "disagreeable" while using factor decomposition (4a) or Bayesian updating (4e)
+- The deliberation phase needs to be carefully designed to avoid the NeurIPS 2025 finding that debate collapses to majority voting. The key is whether agents actually *change their reasoning* in response to challenges, not just shift their numbers. Track whether the reasoning chains substantively update between rounds
+- The number of deliberation rounds should be adaptive: stop when reasoning has stabilised, not after a fixed number of rounds
+- Personality diversity should be genuinely diverse, not just variations on "be more confident" vs "be less confident." The GJP research emphasises cognitive diversity - different ways of *approaching* problems, not just different calibration levels
+
+**Evidence:** Mellers et al. (2014, *Psychological Science*) found that GJP teams outperformed prediction markets by 15-20% on accuracy. The team effect was additive to individual skill - good forecasters in good teams beat good forecasters working alone. Woolley et al. (2010, *Science*) identified "collective intelligence" as a measurable property of groups that's distinct from individual intelligence, driven by social sensitivity, conversational turn-taking, and (importantly) cognitive diversity.
+
+**Open question:** How much of the GJP team benefit translates to LLM agents? Human teams benefit from genuine knowledge differences (one person knows about economics, another about politics). LLM agents share the same training data, so the "knowledge diversity" channel is weaker. The bet here is that *reasoning style diversity* (prompted through personality profiles) provides enough decorrelation to improve forecasts. This is testable through the backtest loop.
+
+---
+
 ## What to Measure
 
 Compare all aggregation methods on Brier score across the backtest suite. The key questions:
 - Does anything consistently beat simple mean + Platt scaling?
 - Does the supervisor aggregator's additional cost justify its improvement?
 - Does domain-specific agent selection (2c) outperform using all agents uniformly?
+- Does cooperative team deliberation (2f) outperform both simple averaging and structured Delphi? Specifically: do forecasts meaningfully improve during deliberation, or just converge to the prior mean?
+- Does personality diversity (2f) reduce correlated errors compared to M copies of the same persona?
 
 Run multiple aggregators in parallel on the same question to get head-to-head comparisons.

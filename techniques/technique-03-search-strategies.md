@@ -5,6 +5,8 @@
 
 ## Overview
 
+**Tetlock Commandments:** 3 (inside/outside view balance → 3a, 3c), 5 (clashing causal forces → 3b)
+
 How agents search for information is the single most important factor in forecast quality. Ablation studies consistently show that removing search collapses accuracy, and that *bad* search actively hurts (worse than no search at all). The difference between a good and bad forecasting system is mostly about search quality.
 
 These are different strategies for how research agents should find and evaluate information. They're implemented as system prompt directives, search tool configurations, and agent personas. A key architectural idea: **agents should have swappable prompt modules** that define their search persona and strategy. We can load in different modules for different agents in the ensemble, giving us the diversity that makes ensembling valuable (see Technique 2c).

@@ -5,6 +5,8 @@
 
 ## Overview
 
+**Tetlock Commandments:** 8 (look for errors behind your mistakes), 10 (master the error-balancing bicycle through deliberative practice)
+
 When the system gets a forecast wrong, understanding *why* it was wrong determines what to fix. These diagnostic tools decompose forecast errors into distinct components, each pointing to a different intervention. Without them, you're guessing at what to improve.
 
 ---

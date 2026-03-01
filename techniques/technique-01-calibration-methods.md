@@ -5,6 +5,8 @@
 
 ## Overview
 
+**Tetlock Commandment:** 7 (balance under- and overconfidence)
+
 After the agents have done their research and the aggregation step has combined their outputs into a single probability, we may want to apply a final correction. LLMs systematically hedge toward 50% - if the evidence says 80%, the system might output 68%. Calibration learns this pattern from historical data and corrects for it.
 
 All calibration methods share the same basic structure: take the raw probability, look up what the actual outcome frequency was when the system said that probability in the past, and adjust accordingly. The differences are in how they fit that correction curve and what guarantees they provide.

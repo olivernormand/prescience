@@ -5,6 +5,8 @@
 
 ## Overview
 
+**Tetlock Commandments:** 2 (break into sub-problems → 4a), 3 (inside/outside view → 4a), 4 (balance evidence reaction → 4e), 5 (clashing causal forces → 4b, 4d)
+
 Once an agent has gathered information, how should it think about that information to arrive at a probability? The default is just "reason about it and give a number." These are structured alternatives that force the agent to reason in specific ways - decomposing the problem, considering both sides, or building explicit models.
 
 Like search strategies (Technique 3), these are **swappable prompt modules** - different agents in the ensemble can use different reasoning frameworks. The prompting strategy is explicitly experimental (§2.1) and everything here should be tested through the automated experimentation loop.
@@ -86,6 +88,36 @@ This draws from the CIA's Analysis of Competing Hypotheses (ACH) methodology and
 
 ---
 
+### 4e. Explicit Bayesian Updating
+
+Instead of asking the agent to holistically estimate a probability, force it to reason in terms of priors and likelihood ratios using Bayes' theorem:
+
+**P(outcome | evidence) = P(evidence | outcome) × P(outcome) / P(evidence)**
+
+For each significant piece of evidence E, the agent must answer three questions:
+1. What's my prior probability for this outcome? P(outcome)
+2. If the outcome were going to happen, how likely would I be to see this evidence? P(E | outcome)
+3. If the outcome were NOT going to happen, how likely would I be to see this evidence? P(E | ¬outcome)
+
+The posterior is then computed mechanically from the likelihood ratio: P(E | outcome) / P(E | ¬outcome). Evidence with a ratio near 1 is uninformative regardless of how relevant it *seems*. Evidence with a ratio far from 1 is diagnostic and should move the probability substantially.
+
+**Why this might help:** Models systematically under-update relative to Bayes' theorem. The Bayesian Coherence Coefficient (arXiv:2507.17951, 2025) found r=0.906 correlation between model size and Bayesian coherence - larger models are closer but still fall short. Explicitly prompting the likelihood ratio decomposition forces the agent to think about what the evidence means *relative to each possible outcome*, rather than just asking "does this evidence seem bullish or bearish?" It also naturally surfaces the distinction between diagnostic and non-diagnostic evidence (see Technique 4d).
+
+**Connection to path independence:** Bayesian updating is mathematically commutative - updating on evidence A then B produces the same posterior as updating on B then A. If agents reason in explicitly Bayesian terms, path independence (Technique 10a) comes for free. This is the theoretical justification for why path-dependent forecasting is irrational (De Finetti's Dutch book theorem).
+
+**Practical prompting:** The prompt should walk the agent through each update step by step. For a question like "Will Country X default on its debt by December?":
+- Prior: base rate of sovereign defaults in this credit rating band → 8%
+- Evidence 1: IMF just downgraded growth forecast. P(downgrade | default) ≈ 0.6, P(downgrade | no default) ≈ 0.15. Likelihood ratio = 4. Posterior → ~26%
+- Evidence 2: Government just secured emergency bilateral loan. P(loan | default) ≈ 0.3, P(loan | no default) ≈ 0.5. Likelihood ratio = 0.6. Posterior → ~18%
+
+Each step is auditable - someone can challenge the individual likelihood estimates without having to argue about the holistic probability.
+
+**When this might not help:** Estimating likelihood ratios P(E|H) is itself hard, and the agent may just shift its uncertainty from "what's the probability?" to "what's the likelihood ratio?" If the agent can't produce reasonable likelihood estimates, the formal structure doesn't buy much. Also, complex questions with many interacting pieces of evidence may not decompose cleanly into sequential Bayesian updates - the evidence may be correlated in ways that make naive sequential updating incorrect.
+
+**Relationship to other frameworks:** This can be combined with factor decomposition (4a) - use factor decomposition to identify the key evidence, then use Bayesian updating to process each piece. It's also complementary to structured hypothesis analysis (4d) - the likelihood ratio naturally measures diagnosticity.
+
+---
+
 ## Swappable Prompt Modules
 
 All of these frameworks should be implemented as loadable prompt modules that define:
@@ -101,3 +133,5 @@ Different agents in the ensemble can load different modules, providing the reaso
 - Do different frameworks work better for different domains?
 - Does mixing frameworks across the ensemble improve overall Brier score through diversity?
 - Does factor decomposition (4a) produce more auditable and stable forecasts?
+- Does explicit Bayesian updating (4e) reduce the under-updating problem identified by the Bayesian Coherence Coefficient?
+- Do agents using Bayesian updating exhibit greater path independence than those using holistic estimation?
